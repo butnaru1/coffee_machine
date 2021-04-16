@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, espresso/0, cappuccino/0, water/0, add_sugar/1, supply/0, stop/0]).
+-export([start_link/0, espresso/0, cappuccino/0, water/0, add_sugar/1, supply/0, stop/0, boom/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
@@ -47,6 +47,8 @@ add_sugar(AddSugar) ->
 supply() ->
   gen_server:call(?SERVER, supply).
 
+boom() -> gen_server:call(?SERVER, boom).
+
 stop() ->
   gen_server:cast(?SERVER, stop).
 
@@ -76,7 +78,8 @@ init([]) ->
   {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
   {stop, Reason :: term(), NewState :: #state{}}).
 handle_call(Request, _From, State = #state{state = MachineState}) when MachineState =:= idle ->
-  case Request of
+  try
+    case Request of
     espresso -> NewState = State#state{state = preparing, request = espresso},
       io:format("Do you want sugar?~n");
     cappuccino -> NewState = State#state{state = preparing, request = cappuccino},
@@ -88,9 +91,13 @@ handle_call(Request, _From, State = #state{state = MachineState}) when MachineSt
       timer:sleep(1000),
       io:format("Your drink is ready...~n"),
       io:format("Resources at the moment: ~nCoffee: ~p~nWater: ~p~nSugar: ~p~nMilk: ~p~n", [Coffee, Water, Sugar, Milk]);
-    _ -> io:format("Not found"), NewState = State
-  end,
-  {reply, ok, NewState};
+    _ -> throw(exception), NewState =State
+      end,
+      {reply, ok, NewState}
+  catch
+    Throw -> io:format("Boom!!!... ~p~n", [Throw]),
+      {reply, ok, State#state{state = need_maintenance}}
+  end;
 
 handle_call({add_sugar, AddSugar}, _From, State = #state{state = MachineState}) when MachineState =:= preparing ->
   io:format("Your drink is preparing, please wait...~n"),
@@ -101,18 +108,18 @@ handle_call({add_sugar, AddSugar}, _From, State = #state{state = MachineState}) 
   io:format("Resources at the moment: ~nCoffee: ~p~nWater: ~p~nSugar: ~p~nMilk: ~p~n", [Coffee, Water, Sugar, Milk]),
   {reply, ok, NewState};
 
-handle_call(supply, _From, #state{state = MachineState}) when  MachineState =:= need_maintenance->
+handle_call(supply, _From, #state{state = MachineState}) when MachineState =:= need_maintenance ->
   NewState = #state{state = idle, coffee = 1000, water = 2000, sugar = 500, milk = 2000},
   io:format("Resources at the moment: ~nCoffee: ~p~nWater: ~p~nSugar: ~p~nMilk: ~p~n", [1000, 2000, 500, 2000]),
   io:format("Resources are added, Coffee Machine is ready for offering you a drink!~n"),
   io:format("Select from list: esspresso, cappuccino or water~n"),
   {reply, ok, NewState};
 
-handle_call(_Request, _From, State =#state{state = MachineState}) when  MachineState =:= need_maintenance->
+handle_call(_Request, _From, State = #state{state = MachineState}) when MachineState =:= need_maintenance ->
   io:format("Coffee Machine need maintenance, please add resources!~n"),
   {reply, ok, State};
 
-handle_call(_Request, _From, State =#state{}) ->
+handle_call(_Request, _From, State = #state{}) ->
   io:format("You put a wrong command!~n"),
   {reply, ok, State}.
 
